@@ -1,0 +1,11 @@
+[package]
+name = "sth3x"
+version = "0.1.0"
+edition = "2021"
+description = "Platform-agnostic Rust driver for the SHT3x-D I2C temperature and Humidity digital sensor."
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+embedded-hal = "0.2.7"
