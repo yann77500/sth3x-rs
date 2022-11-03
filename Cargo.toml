@@ -9,3 +9,4 @@ description = "Platform-agnostic Rust driver for the SHT3x-D I2C temperature and
 
 [dependencies]
 embedded-hal = "0.2.7"
+crc = "3.0.0"

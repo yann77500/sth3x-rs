@@ -1,7 +1,14 @@
 #![no_std]
 #![no_main]
 
+use crc::{Crc, CRC_8_NRSC_5};
 use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
+
+#[derive(Debug)]
+pub enum Error<E> {
+    I2C(E),
+    CRC_ERROR,
+}
 
 /// Repeatability of measurement
 ///     High => Difference between 2 measurement is lowest but time to measurement is highest
@@ -41,29 +48,59 @@ where
         sth3x { i2c, addr }
     }
 
+    fn convert_temperature_degrees(&self, rd_buff: &[u8; 2]) -> f32 {
+        let temperature_raw: u16 = (rd_buff[0] as u16) << 8 | rd_buff[1] as u16;
+
+        let mut temperature: f32 = temperature_raw as f32 / (65535.0);
+        temperature *= 175.0;
+        temperature -= 45.0;
+
+        return temperature;
+    }
+
+    fn convert_hygro(&self, rd_buff: &[u8; 2]) -> f32 {
+        let hygro_raw = (rd_buff[0] as u16) << 8 | rd_buff[1] as u16;
+        let hygro = 100.0 * ((hygro_raw as f32) / 65535.0);
+
+        return hygro;
+    }
+
     ///
     ///
     ///
-    pub fn read_temperature_humidity(&mut self) -> Result<(f32, f32), E> {
+    pub fn read_temperature_humidity(&mut self) -> Result<(f32, f32), Error<E>> {
         let mut rd_buff: [u8; 6] = [0; 6];
 
         match self.i2c.write_read(self.addr, &[0x2C, 0x06], &mut rd_buff) {
             Ok(()) => {
-                //TODO : Methode de convertion temperature du buff vers f32
-                let temperature_raw: u16 = (rd_buff[0] as u16) << 8 | rd_buff[1] as u16;
+                let temp_bytes = &[rd_buff[0], rd_buff[1]];
+                let hygro_bytes = &[rd_buff[3], rd_buff[4]];
 
-                let mut temperature: f32 = temperature_raw as f32 / (65535.0);
-                temperature *= 175.0;
-                temperature -= 45.0;
+                let crc = Crc::<u8>::new(&CRC_8_NRSC_5);
+                let mut digest = crc.digest();
+                digest.update(temp_bytes);
 
-                //TODO : Methode de convertion hygro du buff vers f32
-                let hygro_raw = (rd_buff[3] as u16) << 8 | rd_buff[4] as u16;
-                let hygro = 100.0 * ((hygro_raw as f32) / 65535.0);
+                if digest.finalize() != rd_buff[2] {
+                    return Err(Error::CRC_ERROR);
+                }
+
+                //Convertir la temperature en degrees
+                let temperature = self.convert_temperature_degrees(&temp_bytes);
+
+                let mut digest = crc.digest();
+                digest.update(hygro_bytes);
+
+                if digest.finalize() != rd_buff[5] {
+                    return Err(Error::CRC_ERROR);
+                }
+
+                //Convertir l hygrometrie
+                let hygro = self.convert_hygro(hygro_bytes);
 
                 return Ok((temperature, hygro));
             }
             Err(e) => {
-                return Err(e);
+                return Err(Error::I2C(e));
             }
         }
     }
